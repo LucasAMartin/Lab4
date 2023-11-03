@@ -15,6 +15,7 @@ typedef struct {
 } Process;
 
 typedef struct {
+    int id;
     int scheduling_algorithm;
     Process *ready_queue;
     int queue_size;
@@ -50,13 +51,12 @@ void read_processes(const char *filename, Process *processes, int *num_processes
     fclose(file);
 }
 
-void initialize_processors(Processor *processors, int num_processors, int *scheduling_algorithms, int *initial_loads) {
-    for (int i = 0; i < num_processors; i++) {
-        processors[i].scheduling_algorithm = scheduling_algorithms[i];
-        processors[i].ready_queue = malloc(sizeof(Process) * initial_loads[i]);
-        processors[i].queue_size = 0;
-        processors[i].initial_load = initial_loads[i];
-    }
+void initialize_processor(Processor *processor, int id, int scheduling_algorithm, int initial_load) {
+    processor->id = id;
+    processor->scheduling_algorithm = scheduling_algorithm;
+    processor->ready_queue = malloc(sizeof(Process) * initial_load);
+    processor->queue_size = 0;
+    processor->initial_load = initial_load;
 }
 
 void assign_processes(Process *processes, int num_processes, Processor *processors, int num_processors) {
@@ -78,28 +78,60 @@ void *run_processor(void *arg) {
         Process *process = &processor->ready_queue[0];
 
         // "Execute" the process
-        printf("Processor %d is executing process %d\n", processor->scheduling_algorithm, process->process_id);
+        printf("Processor %d (algorithm %d) is executing process %d\n", processor->id, processor->scheduling_algorithm, process->process_id);
         while (process->cpu_burst_time > 0) {
             process->cpu_burst_time -= 2;  // Decrement the CPU burst time by the quantum (2)
+            printf("Process %d has %d CPU burst time left\n", process->process_id, process->cpu_burst_time);
             usleep(200 * 1000);  // Sleep for 200 milliseconds to simulate process execution
         }
-        printf("Processor %d has finished executing process %d\n", processor->scheduling_algorithm, process->process_id);
+        printf("Processor %d has finished executing process %d\n", processor->id, process->process_id);
 
         // Remove the process from the queue
+        printf("Removing process %d from the ready queue of processor %d\n", process->process_id, processor->id);
         for (int i = 1; i < processor->queue_size; i++) {
             processor->ready_queue[i - 1] = processor->ready_queue[i];
         }
         processor->queue_size--;
+
     }
+
+    printf("Processor %d has completed all its processes\n", processor->id);
 
     return NULL;
 }
 
-int main(int argc, char *argv[]) {
-    if (argc < 3 || argc % 2 != 0) {
+
+int handle_input(int argc, char *argv[]){
+        if (argc < 3 || argc % 2 == 1) {
         printf("Usage: %s <filename> <algorithm1> <load1> <algorithm2> <load2> ...\n", argv[0]);
         return 1;
     }
+
+    // Check if the scheduling algorithms are in the range of 1-4
+    for (int i = 2; i < argc; i += 2) {
+        int scheduling_algorithm = atoi(argv[i]);
+        if (scheduling_algorithm < 1 || scheduling_algorithm > 4) {
+            printf("Error: Invalid scheduling algorithm '%d'. Must be in the range of 1-4.\n", scheduling_algorithm);
+            return 1;
+        }
+    }
+
+    // Check if the loads add up to exactly 1
+    double total_load = 0.0;
+    for (int i = 3; i < argc; i += 2) {
+        double load = atof(argv[i]);
+        total_load += load;
+    }
+    if (total_load != 1.0) {
+        printf("Error: Total load '%f' is not equal to 1.\n", total_load);
+        return 1;
+    }
+    return 0;
+}
+
+int main(int argc, char *argv[]) {
+    if (handle_input(argc, argv) != 0)
+        return 1;
 
     printf("Reading processes from file: %s\n", argv[1]);
 
@@ -114,8 +146,8 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < num_processors; i++) {
         int scheduling_algorithm = atoi(argv[i * 2 + 2]);
         int initial_load = atof(argv[i * 2 + 3]) * num_processes;
-        printf("Initializing processor %d with scheduling algorithm %d and initial load %d\n", i, scheduling_algorithm, initial_load);
-        initialize_processors(&processors[i], 1, &scheduling_algorithm, &initial_load);
+        printf("Initializing processor %d with scheduling algorithm %d and initial load %.0f%%\n", i, scheduling_algorithm, atof(argv[i * 2 + 3]) * 100);
+        initialize_processor(&processors[i], i, scheduling_algorithm, initial_load);
     }
 
     printf("Assigning processes to processors\n");
