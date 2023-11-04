@@ -133,6 +133,54 @@ void load_balance(Process *processes, Processor *processors, int num_processors)
 }
 
 
+void fcfs(Process **ready_queue, int *queue_size) {
+    // Get the next process in the queue
+    Process *process = ready_queue[0];
+
+    // "Execute" the process
+    printf("Executing process %d as FCFS\n", process->process_id);
+    while (process->cpu_burst_time > 0) {
+        process->cpu_burst_time -= 2;  // Decrement the CPU burst time by the quantum (2)
+        printf("Process %d has %d CPU burst time left\n", process->process_id, process->cpu_burst_time);
+        usleep(200);  // Sleep for 200 milliseconds to simulate process execution
+    }
+    printf("Finished executing process %d\n", process->process_id);
+
+    // Remove the process from the queue
+    printf("Removing process %d from the ready queue\n", process->process_id);
+    for (int i = 1; i < *queue_size; i++) {
+        ready_queue[i - 1] = ready_queue[i];
+    }
+    (*queue_size)--;
+}
+
+void sjf(Process **ready_queue, int *queue_size) {
+    // Find the process with the shortest CPU burst time
+    int shortest_index = 0;
+    for (int i = 1; i < *queue_size; i++) {
+        if (ready_queue[i]->cpu_burst_time < ready_queue[shortest_index]->cpu_burst_time) {
+            shortest_index = i;
+        }
+    }
+    Process *process = ready_queue[shortest_index];
+
+    // "Execute" the process
+    printf("Executing process %d as SJF\n", process->process_id);
+    while (process->cpu_burst_time > 0) {
+        process->cpu_burst_time -= 2;  // Decrement the CPU burst time by the quantum (2)
+        printf("Process %d has %d CPU burst time left\n", process->process_id, process->cpu_burst_time);
+        usleep(200);  // Sleep for 200 milliseconds to simulate process execution
+    }
+    printf("Finished executing process %d\n", process->process_id);
+
+    // Remove the process from the queue
+    printf("Removing process %d from the ready queue\n", process->process_id);
+    for (int i = shortest_index; i < *queue_size - 1; i++) {
+        ready_queue[i] = ready_queue[i + 1];
+    }
+    (*queue_size)--;
+}
+
 void *run_processor(void *arg) {
     ProcessorArgs *args = (ProcessorArgs *)arg;
     Processor *processor = args->processor;
@@ -140,26 +188,14 @@ void *run_processor(void *arg) {
     Processor *processors = args->processors;
     int num_processors = args->num_processors;
     printf("Processor %d has %d processes in the queue to start\n", processor->id, processor->queue_size);
-    // Implement the FCFS scheduling algorithm
+
     while (processor->queue_size > 0) {
-        // Get the next process in the queue
-        Process *process = processor->ready_queue[0];  // No need to change this line
-
-        // "Execute" the process
-        printf("Processor %d (algorithm %d) is executing process %d\n", processor->id, processor->scheduling_algorithm, process->process_id);
-        while (process->cpu_burst_time > 0) {
-            process->cpu_burst_time -= 2;  // Decrement the CPU burst time by the quantum (2)
-            printf("Process %d has %d CPU burst time left\n", process->process_id, process->cpu_burst_time);
-            usleep(200);  // Sleep for 200 milliseconds to simulate process execution
+        // Select the next process based on the scheduling algorithm
+        if (processor->scheduling_algorithm == 2) {  // Shortest Job First
+            sjf(processor->ready_queue, &(processor->queue_size));
+        } else {  // First Come First Served
+            fcfs(processor->ready_queue, &(processor->queue_size));
         }
-        printf("Processor %d has finished executing process %d\n", processor->id, process->process_id);
-
-        // Remove the process from the queue
-        printf("Removing process %d from the ready queue of processor %d\n", process->process_id, processor->id);
-        for (int i = 1; i < processor->queue_size; i++) {
-            processor->ready_queue[i - 1] = processor->ready_queue[i];  // No need to change this line
-        }
-        processor->queue_size--;
 
         // Print the number of processes left
         printf("Processor %d has %d processes left to complete\n", processor->id, processor->queue_size);
