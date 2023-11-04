@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <string.h>
 
 typedef struct {
     char priority;
@@ -22,6 +23,13 @@ typedef struct {
     int initial_load;
     pthread_t thread;
 } Processor;
+
+typedef struct {
+    Processor *processor;
+    Process *processes;
+    Processor *processors;
+    int num_processors;
+} ProcessorArgs;
 
 #define MAX_PROCESSES 1000 
 #define MAX_PROCESSORS 4    
@@ -60,18 +68,61 @@ void initialize_processor(Processor *processor, int id, int scheduling_algorithm
 }
 
 void assign_processes(Process *processes, int num_processes, Processor *processors, int num_processors) {
-    for (int i = 0; i < num_processes; i++) {
-        int processor_index = i % num_processors; 
-        if (processors[processor_index].queue_size < processors[processor_index].initial_load) {
-            processors[processor_index].ready_queue[processors[processor_index].queue_size] = processes[i];
-            processors[processor_index].queue_size++;
+    int process_index = 0;
+    for (int i = 0; i < num_processors; i++) {
+        for (int j = 0; j < processors[i].initial_load; j++) {
+            if (process_index < num_processes) {
+                processors[i].ready_queue[j] = processes[process_index++];
+                processors[i].queue_size++;
+            } else {
+                break;
+            }
         }
     }
 }
 
-void *run_processor(void *arg) {
-    Processor *processor = (Processor *)arg;
 
+void load_balance(Process *processes, Processor *processors, int num_processors) {
+    // Calculate the total number of processes in all ready queues
+    int total_processes = 0;
+    for (int i = 0; i < num_processors; i++) {
+        total_processes += processors[i].queue_size;
+    }
+
+    // Calculate the ideal number of processes per processor
+    int ideal_load = total_processes / num_processors;
+
+    // Create a temporary array to hold all processes
+    Process *temp = malloc(total_processes * sizeof(Process));
+
+    // Copy all processes from the ready queues to the temporary array
+    int index = 0;
+    for (int i = 0; i < num_processors; i++) {
+        memcpy(&temp[index], processors[i].ready_queue, processors[i].queue_size * sizeof(Process));
+        index += processors[i].queue_size;
+    }
+
+    // Distribute the processes from the temporary array back to the processors
+    index = 0;
+    for (int i = 0; i < num_processors; i++) {
+        int load = (i == num_processors - 1) ? total_processes - index : ideal_load;
+        memcpy(processors[i].ready_queue, &temp[index], load * sizeof(Process));
+        processors[i].queue_size = load;
+        index += load;
+        printf("Processor %d will have %d processes after load balancing\n", processors[i].id, processors[i].queue_size);
+    }
+
+    // Free the memory allocated for the temporary array
+    free(temp);
+}
+
+void *run_processor(void *arg) {
+    ProcessorArgs *args = (ProcessorArgs *)arg;
+    Processor *processor = args->processor;
+    Process *processes = args->processes;
+    Processor *processors = args->processors;
+    int num_processors = args->num_processors;
+    printf("Processor %d has %d processes in the queue to start\n", processor->id, processor->queue_size);
     // Implement the FCFS scheduling algorithm
     while (processor->queue_size > 0) {
         // Get the next process in the queue
@@ -82,7 +133,7 @@ void *run_processor(void *arg) {
         while (process->cpu_burst_time > 0) {
             process->cpu_burst_time -= 2;  // Decrement the CPU burst time by the quantum (2)
             printf("Process %d has %d CPU burst time left\n", process->process_id, process->cpu_burst_time);
-            usleep(200 * 1000);  // Sleep for 200 milliseconds to simulate process execution
+            usleep(200);  // Sleep for 200 milliseconds to simulate process execution
         }
         printf("Processor %d has finished executing process %d\n", processor->id, process->process_id);
 
@@ -93,6 +144,14 @@ void *run_processor(void *arg) {
         }
         processor->queue_size--;
 
+        // Print the number of processes left
+        printf("Processor %d has %d processes left to complete\n", processor->id, processor->queue_size);
+    }
+
+    // If the processor's queue is empty, balance the load
+    if (processor->queue_size == 0) {
+        printf("Processor %d has no more processes. Balancing load...\n", processor->id);
+        load_balance(processes, processors, num_processors);
     }
 
     printf("Processor %d has completed all its processes\n", processor->id);
@@ -143,11 +202,16 @@ int main(int argc, char *argv[]) {
 
     int num_processors = (argc - 2) / 2;
     Processor processors[MAX_PROCESSORS];
+    ProcessorArgs args[MAX_PROCESSORS];  // Add this line
     for (int i = 0; i < num_processors; i++) {
         int scheduling_algorithm = atoi(argv[i * 2 + 2]);
         int initial_load = atof(argv[i * 2 + 3]) * num_processes;
         printf("Initializing processor %d with scheduling algorithm %d and initial load %.0f%%\n", i, scheduling_algorithm, atof(argv[i * 2 + 3]) * 100);
         initialize_processor(&processors[i], i, scheduling_algorithm, initial_load);
+        args[i].processor = &processors[i];  // Add this line
+        args[i].processes = processes;  // Add this line
+        args[i].processors = processors;  // Add this line
+        args[i].num_processors = num_processors;  // Add this line
     }
 
     printf("Assigning processes to processors\n");
@@ -157,7 +221,7 @@ int main(int argc, char *argv[]) {
     printf("Starting processors\n");
 
     for (int i = 0; i < num_processors; i++) {
-        pthread_create(&processors[i].thread, NULL, run_processor, &processors[i]);
+        pthread_create(&processors[i].thread, NULL, run_processor, &args[i]);  // Modify this line
     }
 
     printf("Waiting for processors to finish\n");
