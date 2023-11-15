@@ -52,7 +52,6 @@ void read_processes(const char *filename, Process *processes, int *num_processes
     fclose(file);
 }
 
-
 void handle_signal(int sig)
 {
     printf("All processors finished\n");
@@ -98,6 +97,7 @@ void load_balance(Process *processes, Processor *processors, int num_processors,
 {
     // Calculate the total number of processes in all ready queues
     int total_processes = 0;
+
     for (int i = 0; i < num_processors; i++)
     {
         total_processes += processors[i].queue_size;
@@ -110,48 +110,37 @@ void load_balance(Process *processes, Processor *processors, int num_processors,
     printf("Balancing the load for processor %d\n", processors[processor_id].id);
     // Calculate the ideal number of processes per processor
     int ideal_load = total_processes / num_processors;
-    int remainder = total_processes % num_processors;
 
-    // Sort the processors by queue size in descending order
-    qsort(processors, num_processors, sizeof(Processor), compare_queue_size);
+    // Create a temporary array to hold all processes
+    Process **temp = malloc(total_processes * sizeof(Process *));
 
-    // Distribute the processes from the largest queues to the smallest queues
+    // Copy all processes from the ready queues to the temporary array
+    int index = 0;
+    for (int i = 0; i < num_processors; i++)
+    {
+        memcpy(&temp[index], processors[i].ready_queue, processors[i].queue_size * sizeof(Process *));
+        index += processors[i].queue_size;
+    }
+
+    // Distribute the processes from the temporary array back to the processors
+    index = 0;
     for (int i = 0; i < num_processors; i++)
     {
         int load = ideal_load;
         // If there are remaining processes, add one to the load
-        if (remainder > 0)
+        if (total_processes - index > num_processors * ideal_load)
         {
             load++;
-            remainder--;
         }
-        while (processors[i].queue_size > load)
-        {
-            // Find the processor with the smallest queue that can take another process
-            int j = num_processors - 1;
-            while (j > i && processors[j].queue_size >= ideal_load + (remainder > 0))
-            {
-                j--;
-            }
-            // Move a process from the end of the current queue to the beginning of the smallest queue
-            Process *process = processors[i].ready_queue[--processors[i].queue_size];
-            memmove(&processors[j].ready_queue[1], &processors[j].ready_queue[0], processors[j].queue_size * sizeof(Process *));
-            processors[j].ready_queue[0] = process;
-            processors[j].queue_size++;
-        }
+        memcpy(processors[i].ready_queue, &temp[index], load * sizeof(Process *));
+        processors[i].queue_size = load;
+        index += load;
         printf("Processor %d will have %d processes after load balancing\n", processors[i].id, processors[i].queue_size);
     }
+
+    // Free the memory allocated for the temporary array
+    free(temp);
 }
-
-
-// Comparison function for qsort
-int compare_queue_size(const void *a, const void *b)
-{
-    Processor *processorA = (Processor *)a;
-    Processor *processorB = (Processor *)b;
-    return processorB->queue_size - processorA->queue_size;
-}
-
 
 void print_cpu_burst_time(Process *process)
 {
@@ -166,7 +155,7 @@ void execute_process(Process *process, char *scheduling_algorithm, int processor
     {
         process->cpu_burst_time -= QUANTUM; // Decrement the CPU burst time by the quantum (2)
         print_cpu_burst_time(process);
-        usleep(MILLISECONDS * 1000); // Sleep for 200 milliseconds to simulate process execution
+        usleep(MILLISECONDS * 100000); // Sleep for 200 milliseconds to simulate process execution
     }
     printf("Processor %d has finished executing process %d\n", processor_id, process->process_id);
 }
@@ -221,24 +210,23 @@ void priority_scheduling(Process **ready_queue, int *queue_size, int processor_i
     remove_process(ready_queue, queue_size, highest_priority_index, processor_id);
 }
 
-void round_robin(Process **ready_queue, int *queue_size, int processor_id)
+void round_robin(Process **ready_queue, int *queue_size, Processor *processor)
 {
     Process *process = ready_queue[0];
-    static int iterations = 0; // Declare iterations as a static variable
-    if (iterations == 0)
+    if (processor->iterations == 0)
     {
-        printf("Processor %d is executing process %d using Round Robin\n", processor_id, process->process_id);
+        printf("Processor %d is executing process %d using Round Robin\n", processor->id, process->process_id);
     }
-    if (iterations < ROUND_ROBIN_TURNS && process->cpu_burst_time > 0)
+    if (processor->iterations < ROUND_ROBIN_TURNS && process->cpu_burst_time > 0)
     {
         process->cpu_burst_time -= QUANTUM; // Decrement the CPU burst time by the quantum
-        iterations += 1;
+        processor->iterations += 1;
         print_cpu_burst_time(process);
-        usleep(MILLISECONDS * 1000); // Sleep for quantum milliseconds to simulate process execution
+        usleep(MILLISECONDS * 100000); // Sleep for quantum milliseconds to simulate process execution
     }
-    if (iterations > ROUND_ROBIN_TURNS || process->cpu_burst_time <= 0)
+    if (processor->iterations >= ROUND_ROBIN_TURNS || process->cpu_burst_time <= 0)
     {
-        printf("Processor %d is switching from process %d\n", processor_id, process->process_id);
+        printf("Processor %d is switching from process %d\n", processor->id, process->process_id);
         // Move the process to the end of the queue
         for (int i = 1; i < *queue_size; i++)
         {
@@ -246,7 +234,7 @@ void round_robin(Process **ready_queue, int *queue_size, int processor_id)
         }
         ready_queue[*queue_size - 1] = process;
         // Reset iterations
-        iterations = 0;
+        processor->iterations = 0;
     }
     // Remove the process from the queue if it has finished execution
     if (process->cpu_burst_time <= 0)
@@ -261,9 +249,10 @@ void round_robin(Process **ready_queue, int *queue_size, int processor_id)
                 break;
             }
         }
-        remove_process(ready_queue, queue_size, process_index, processor_id);
+        remove_process(ready_queue, queue_size, process_index, processor->id);
     }
 }
+
 
 void *run_processor(void *arg)
 {
@@ -285,7 +274,7 @@ void *run_processor(void *arg)
             sjf(processor->ready_queue, &(processor->queue_size), processor->id);
             break;
         case 3: // Round Robin
-            round_robin(processor->ready_queue, &(processor->queue_size), processor->id);
+            round_robin(processor->ready_queue, &(processor->queue_size), processor);
             break;
         case 4: // First Come First Served
             fcfs(processor->ready_queue, &(processor->queue_size), processor->id);
@@ -323,12 +312,6 @@ int is_number(char *str)
         }
     }
     return 1;
-}
-
-void handle_sigabrt(int sig)
-{
-    printf("All processors finished\n");
-    exit(0);
 }
 
 int handle_input(int argc, char *argv[])
@@ -426,11 +409,12 @@ int main(int argc, char *argv[])
         pthread_create(&processors[i].thread, NULL, run_processor, &args[i]);
     }
 
+    signal(SIGABRT, handle_signal);
     for (int i = 0; i < num_processors; i++)
     {
         int result = pthread_join(processors[i].thread, NULL);
         if (result != 0) {
-            printf("Error joining thread %d: %s\n\n\n\n", i, strerror(result));
+            printf("Error joining thread %d: %s\n", i, strerror(result));
 
         }
     }

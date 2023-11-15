@@ -8,7 +8,7 @@
 #define MAX_PROCESSORS 10
 #define QUANTUM 2
 #define MILLISECONDS 1
-#define ROUND_ROBIN_TURNS 6
+#define ROUND_ROBIN_TURNS 5
 
 typedef struct {
     char priority;
@@ -46,7 +46,7 @@ void load_balance(Process *processes, Processor *processors, int num_processors,
 void fcfs(Process **ready_queue, int *queue_size, int processor_id);
 void sjf(Process **ready_queue, int *queue_size, int processor_id);
 void priority_scheduling(Process **ready_queue, int *queue_size, int processor_id);
-void round_robin(Process **ready_queue, int *queue_size, int processor_id);
+void round_robin(Process **ready_queue, int *queue_size, Processor *processor);
 void *run_processor(void *arg);
 int handle_input(int argc, char *argv[]);
 
