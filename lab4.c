@@ -98,7 +98,6 @@ void load_balance(Process *processes, Processor *processors, int num_processors,
 {
     // Calculate the total number of processes in all ready queues
     int total_processes = 0;
-
     for (int i = 0; i < num_processors; i++)
     {
         total_processes += processors[i].queue_size;
@@ -111,37 +110,48 @@ void load_balance(Process *processes, Processor *processors, int num_processors,
     printf("Balancing the load for processor %d\n", processors[processor_id].id);
     // Calculate the ideal number of processes per processor
     int ideal_load = total_processes / num_processors;
+    int remainder = total_processes % num_processors;
 
-    // Create a temporary array to hold all processes
-    Process **temp = malloc(total_processes * sizeof(Process *));
+    // Sort the processors by queue size in descending order
+    qsort(processors, num_processors, sizeof(Processor), compare_queue_size);
 
-    // Copy all processes from the ready queues to the temporary array
-    int index = 0;
-    for (int i = 0; i < num_processors; i++)
-    {
-        memcpy(&temp[index], processors[i].ready_queue, processors[i].queue_size * sizeof(Process *));
-        index += processors[i].queue_size;
-    }
-
-    // Distribute the processes from the temporary array back to the processors
-    index = 0;
+    // Distribute the processes from the largest queues to the smallest queues
     for (int i = 0; i < num_processors; i++)
     {
         int load = ideal_load;
         // If there are remaining processes, add one to the load
-        if (total_processes - index > num_processors * ideal_load)
+        if (remainder > 0)
         {
             load++;
+            remainder--;
         }
-        memcpy(processors[i].ready_queue, &temp[index], load * sizeof(Process *));
-        processors[i].queue_size = load;
-        index += load;
+        while (processors[i].queue_size > load)
+        {
+            // Find the processor with the smallest queue that can take another process
+            int j = num_processors - 1;
+            while (j > i && processors[j].queue_size >= ideal_load + (remainder > 0))
+            {
+                j--;
+            }
+            // Move a process from the end of the current queue to the beginning of the smallest queue
+            Process *process = processors[i].ready_queue[--processors[i].queue_size];
+            memmove(&processors[j].ready_queue[1], &processors[j].ready_queue[0], processors[j].queue_size * sizeof(Process *));
+            processors[j].ready_queue[0] = process;
+            processors[j].queue_size++;
+        }
         printf("Processor %d will have %d processes after load balancing\n", processors[i].id, processors[i].queue_size);
     }
-
-    // Free the memory allocated for the temporary array
-    free(temp);
 }
+
+
+// Comparison function for qsort
+int compare_queue_size(const void *a, const void *b)
+{
+    Processor *processorA = (Processor *)a;
+    Processor *processorB = (Processor *)b;
+    return processorB->queue_size - processorA->queue_size;
+}
+
 
 void print_cpu_burst_time(Process *process)
 {
@@ -226,7 +236,7 @@ void round_robin(Process **ready_queue, int *queue_size, int processor_id)
         print_cpu_burst_time(process);
         usleep(MILLISECONDS * 1000); // Sleep for quantum milliseconds to simulate process execution
     }
-    if (iterations >= ROUND_ROBIN_TURNS || process->cpu_burst_time <= 0)
+    if (iterations > ROUND_ROBIN_TURNS || process->cpu_burst_time <= 0)
     {
         printf("Processor %d is switching from process %d\n", processor_id, process->process_id);
         // Move the process to the end of the queue
@@ -416,12 +426,11 @@ int main(int argc, char *argv[])
         pthread_create(&processors[i].thread, NULL, run_processor, &args[i]);
     }
 
-    signal(SIGABRT, handle_sigabrt);
     for (int i = 0; i < num_processors; i++)
     {
         int result = pthread_join(processors[i].thread, NULL);
         if (result != 0) {
-            printf("Error joining thread %d: %s\n", i, strerror(result));
+            printf("Error joining thread %d: %s\n\n\n\n", i, strerror(result));
 
         }
     }

@@ -8,7 +8,7 @@
 #define MAX_PROCESSORS 10
 #define QUANTUM 2
 #define MILLISECONDS 1
-#define ROUND_ROBIN_TURNS 5
+#define ROUND_ROBIN_TURNS 6
 
 typedef struct {
     char priority;
