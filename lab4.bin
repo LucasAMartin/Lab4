@@ -40,15 +40,23 @@ void read_processes(const char *filename, Process *processes, int *num_processes
         if (fread(&process->number_of_files, sizeof(int), 1, file) != 1)
             break;
 
-        // Check if the process name starts with "Process_"
-        if (*num_processes == 0 && strncmp(process->name, "Process_", 8) != 0)
+        // Check if the process data is valid
+        if (process->priority < 0)
         {
-            printf("Invalid file\n");
+            printf("Invalid file structure\n");
             exit(1);
         }
 
         (*num_processes)++;
     }
+
+    // Check if the file was read correctly
+    if (feof(file) == 0)
+    {
+        printf("Invalid file\n");
+        exit(1);
+    }
+
     fclose(file);
 }
 
